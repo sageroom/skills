@@ -69,16 +69,36 @@ Each command is a quoted string. The helpers:
 - Write `$CLAUDE_JOB_DIR/tmp/shell-pane.done` when finished
 - Clean up the temp script on exit
 
-## Reading the output
+## Verify every launch
 
-**Always call `wait-and-read.sh` after every `run-remote.sh` or `run-local.sh` call.** Never report results, declare success, or tell the user a command is running until you have read the output. The pane is visible to the user but not to you — the only way you know what happened is by reading the log.
+**The Bash call to `run-remote.sh` / `run-local.sh` returns immediately with no output** — it only fires `tmux send-keys`. Empty output is NOT success. You must verify that the command actually ran before telling the user anything.
+
+The method depends on whether the command terminates:
+
+### Terminating commands (scripts, one-shots, pipelines)
+
+Call `wait-and-read.sh` — it blocks until `shell-pane.done` is written, then prints the log:
 
 ```bash
 ~/.claude/skills/shell-pane/wait-and-read.sh          # default 120s timeout
 ~/.claude/skills/shell-pane/wait-and-read.sh 300       # custom timeout
 ```
 
-If the output shows an error (command not found, permission denied, etc.), handle it — don't silently move on. The user cannot see your tool calls, only your text, so "it's running" without verified output is a false claim.
+If the output shows an error (command not found, permission denied, etc.), handle it — don't silently move on.
+
+### Interactive / non-terminating commands (btop, vim, less, watch…)
+
+`wait-and-read.sh` will hang until timeout because `shell-pane.done` is never written. Instead, sleep briefly then capture the pane to confirm the TUI is visible vs. an SSH error or "command not found":
+
+```bash
+PANE_ID=$(cat "$CLAUDE_JOB_DIR/tmp/shell-pane-active")
+sleep 3
+tmux capture-pane -p -t "$PANE_ID"
+```
+
+Read the captured output. If it shows the expected interface, report success. If it shows an error, handle it.
+
+The user cannot see your tool calls, only your text — "it's running" without verified output is a false claim.
 
 ## Installing missing tools
 
