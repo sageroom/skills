@@ -19,7 +19,13 @@ The helper scripts need to be in the Bash allowlist so they run without a permis
 }
 ```
 
-Also confirm tmux is installed (`which tmux`) and Claude Code is running inside a tmux session (`tmux display-message -p '#S'`). If not in tmux, ask the user to restart Claude Code inside one: `tmux new-session -s main` then relaunch.
+Also confirm tmux is installed and Claude Code is running inside a tmux session:
+
+```bash
+~/.claude/skills/shell-pane/check-setup.sh
+```
+
+If it errors, ask the user to restart Claude Code inside tmux: `tmux new-session -s main` then relaunch.
 
 The `Stop` hook is also required — it fires at the end of every response and closes the pane (with a 5s countdown so the user can interrupt). Without it, panes stay open permanently. Add this to `~/.claude/settings.json`:
 
@@ -88,17 +94,30 @@ If the output shows an error (command not found, permission denied, etc.), handl
 
 ### Interactive / non-terminating commands (btop, vim, less, watch…)
 
-`wait-and-read.sh` will hang until timeout because `shell-pane.done` is never written. Instead, sleep briefly then capture the pane to confirm the TUI is visible vs. an SSH error or "command not found":
+`wait-and-read.sh` will hang until timeout because `shell-pane.done` is never written. Instead, use:
 
 ```bash
-PANE_ID=$(cat "$CLAUDE_JOB_DIR/tmp/shell-pane-active")
-sleep 3
-tmux capture-pane -p -t "$PANE_ID"
+~/.claude/skills/shell-pane/verify-interactive.sh        # default 3s wait
+~/.claude/skills/shell-pane/verify-interactive.sh 5      # custom wait
 ```
 
-Read the captured output. If it shows the expected interface, report success. If it shows an error, handle it.
+This sleeps briefly then captures the pane. Read the output: if it shows the expected TUI, report success. If it shows an error ("command not found", SSH failure), handle it.
 
 The user cannot see your tool calls, only your text — "it's running" without verified output is a false claim.
+
+### Install-then-interactive (e.g. apt install followed by a TUI)
+
+When a command sequence installs a tool and then launches an interactive TUI, **split into two separate `run-remote.sh` calls**. Do not bundle them in one call and guess a sleep duration — the install time is unpredictable and a long sleep is visible to the user as a freeze.
+
+```bash
+# Step 1: install (terminating — wait for it properly)
+~/.claude/skills/shell-pane/run-remote.sh HOST "sudo apt install -y <tool>"
+~/.claude/skills/shell-pane/wait-and-read.sh 300
+
+# Step 2: launch the TUI (interactive — verify with a brief capture)
+~/.claude/skills/shell-pane/run-remote.sh HOST "<tool>"
+~/.claude/skills/shell-pane/verify-interactive.sh 3
+```
 
 ## Installing missing tools
 
