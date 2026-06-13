@@ -71,14 +71,26 @@ Each command is a quoted string. The helpers:
 
 ## Reading the output
 
-After launching, use `wait-and-read.sh` to block until the script finishes and print the captured output:
+**Always call `wait-and-read.sh` after every `run-remote.sh` or `run-local.sh` call.** Never report results, declare success, or tell the user a command is running until you have read the output. The pane is visible to the user but not to you — the only way you know what happened is by reading the log.
 
 ```bash
 ~/.claude/skills/shell-pane/wait-and-read.sh          # default 120s timeout
 ~/.claude/skills/shell-pane/wait-and-read.sh 300       # custom timeout
 ```
 
-This lets Claude see the command results without asking the user.
+If the output shows an error (command not found, permission denied, etc.), handle it — don't silently move on. The user cannot see your tool calls, only your text, so "it's running" without verified output is a false claim.
+
+## Installing missing tools
+
+If a command fails because a tool isn't installed and you decide to install it, you must tell the user **before running the install**:
+
+- A one-liner explaining what the tool is
+- A link to its documentation or homepage
+
+Example:
+> Installing **btop** — a resource monitor showing CPU, memory, disk, and network with live graphs. [github.com/aristocratos/btop](https://github.com/aristocratos/btop)
+
+Never silently `apt install` something without this disclosure. The user may not want it, or may want to review it first.
 
 ## Closing the pane
 
