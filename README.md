@@ -44,3 +44,9 @@ bash "$REPO/install.sh"
 Runs SSH commands and complex local scripts in a visible tmux pane adjacent to Claude, with paced output (10s between commands) so you can follow along. Pane auto-closes with a countdown at the end of each response.
 
 See [shell-pane/SKILL.md](shell-pane/SKILL.md) for full setup instructions including required `~/.claude/settings.json` configuration.
+
+### pop-quiz
+
+Administers a short five-question quiz (four multiple-choice plus one open-recall) entirely within the TUI — no browser, no exported flashcards. Quizzes you either on the current Claude session (application/transfer questions) or on a knowledge base on disk. Grades silently and surfaces only what you got wrong. Explicit invocation only.
+
+See [pop-quiz/SKILL.md](pop-quiz/SKILL.md).
