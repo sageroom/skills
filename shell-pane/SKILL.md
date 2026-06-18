@@ -70,14 +70,31 @@ All boilerplate lives in pre-written helpers. Bash calls contain only the meanin
 
 Each command is a quoted string. The helpers:
 - Print each command before running it (`>>> command`)
-- Sleep 10s between commands so the user can read output
+- Pace output with a cosmetic `sleep` between commands so the user can read it
+  (default 10s, override with `SHELL_PANE_PACE`). This is readability only — the
+  generated script runs commands synchronously, so it is not sequencing.
 - Tee all output to `$CLAUDE_JOB_DIR/tmp/shell-pane.log`
 - Write `$CLAUDE_JOB_DIR/tmp/shell-pane.done` when finished
 - Clean up the temp script on exit
 
+### Pane guard and self-heal
+
+Before dispatching, the helpers check that the tracked pane is **alive and at a
+shell prompt**. If the tracked pane is dead, missing, or **busy running a
+foreground process** (e.g. a server you left running), they open a *fresh* pane
+and repoint the marker instead of typing keystrokes into that process. The busy
+pane is left running, never killed. This is the same shell-only guard
+`close-pane.sh` uses to protect a running process from the Stop hook — the send
+path is now as defensive as the close path.
+
+`run-remote.sh` / `run-local.sh` also print a one-line dispatch confirmation
+(`Dispatched to %N: …` then `Confirmed: …`) so the otherwise-silent send is
+visible. The confirmation is informative, not proof of success — you still must
+read the actual output (see below).
+
 ## Verify every launch
 
-**The Bash call to `run-remote.sh` / `run-local.sh` returns immediately with no output** — it only fires `tmux send-keys`. Empty output is NOT success. You must verify that the command actually ran before telling the user anything.
+**The Bash call to `run-remote.sh` / `run-local.sh` returns immediately after firing `tmux send-keys`.** It prints only a short dispatch confirmation — that is NOT the command's output and NOT proof it succeeded. You must verify that the command actually ran before telling the user anything. (A `WARNING:` line means the pane was still idle ~3s after dispatch — investigate before reporting success.)
 
 The method depends on whether the command terminates:
 
@@ -91,6 +108,11 @@ Call `wait-and-read.sh` — it blocks until `shell-pane.done` is written, then p
 ```
 
 If the output shows an error (command not found, permission denied, etc.), handle it — don't silently move on.
+
+On timeout, `wait-and-read.sh` now captures and prints the pane contents under a
+`--- pane contents at timeout ---` header instead of a bare `TIMEOUT:` line. If
+that capture shows a shell prompt or an unrelated running process, the command
+never executed — read it as the diagnostic it is, don't just retry blindly.
 
 ### Interactive / non-terminating commands (btop, vim, less, watch…)
 
@@ -117,6 +139,40 @@ When a command sequence installs a tool and then launches an interactive TUI, **
 # Step 2: launch the TUI (interactive — verify with a brief capture)
 ~/.claude/skills/shell-pane/run-remote.sh HOST "<tool>"
 ~/.claude/skills/shell-pane/verify-interactive.sh 3
+```
+
+### Commands needing sudo
+
+`run-remote.sh` uses `ssh -t`, which allocates a TTY, so a `sudo` password prompt
+appears **in the visible pane** and the user types it there. The bundled script
+runs synchronously, so `sudo` blocks until the password is entered — there is no
+internal pacing problem to solve here.
+
+The one real failure is a *second* dispatch fired while a prior `sudo` is still
+waiting on its password: those keystrokes would land in the running session. The
+pane guard prevents this (it sees the busy pane and opens a fresh one), but that
+fresh pane isn't where your sudo command is. So:
+
+- Put a `sudo` command in its **own** `run-remote.sh` call.
+- Use a generous `wait-and-read.sh` timeout (the user may take a while to type).
+- **Never fire the next dispatch until `wait-and-read.sh` returns.**
+
+> Note: the idea of "prompt-aware pacing" between commands belongs to an older
+> send-keys-per-command model. The current helpers bundle commands into one
+> synchronous script, so the only collision is the cross-call one above.
+
+### Read-only one-shot probes
+
+For a quick read-only probe you don't need to *watch*, skip the pane ceremony
+entirely — just run `ssh HOST 'cmd'` via a normal Bash call and read stdout. No
+scp, no sentinel, no pane.
+
+If you do want it visible, `probe-remote.sh` runs a single SSH command directly
+in the guarded pane (no scp, no generated script):
+
+```bash
+~/.claude/skills/shell-pane/probe-remote.sh HOST "df -h"
+~/.claude/skills/shell-pane/wait-and-read.sh
 ```
 
 ## Installing missing tools
